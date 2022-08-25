@@ -1,0 +1,127 @@
+:plugin: example
+:type: filter
+
+///////////////////////////////////////////
+START - GENERATED VARIABLES, DO NOT EDIT!
+///////////////////////////////////////////
+:version: %VERSION%
+:release_date: %RELEASE_DATE%
+:changelog_url: %CHANGELOG_URL%
+:include_path: ../../../../logstash/docs/include
+///////////////////////////////////////////
+END - GENERATED VARIABLES, DO NOT EDIT!
+///////////////////////////////////////////
+
+[id="plugins-{type}s-{plugin}"]
+
+== logstash-filter-ssdeep
+
+=== Example filter plugin
+
+[,logstash]
+----
+filter{
+  ssdeep {
+    ssdeep_bin => '/usr/bin/ssdeep'
+    fuzzy_db => '/usr/share/logstash/fuzzy.db'
+    threshold => 95
+    file_field => '[path]'
+    weight => 1.0
+    target => 'ssdeep'
+    score_name => 'sb_ssdeep'
+    latency_name => 'ssdeep_latency'
+  }
+}
+----
+
+=== Description
+
+This is an example of Logstash filter plugin for ssdeep analysis. This filter returns a
+JSON with the result provided by ssdeep and a score about how similarly is the given file
+to fuzzy database entries.
+dangerous is the file.
+
+https://ssdeep-project.github.io/ssdeep/index.html
+
+[id="plugins-{type}s-{plugin}-options"]
+==== Filter Configuration Options
+
+[cols="<,<,<",options="header",]
+|=======================================================================
+|Setting |Input type|Required
+| <<plugins-{type}s-{plugin}-ssdeep_bin>> |String|No
+| <<plugins-{type}s-{plugin}-fuzzy_db>> |String|No
+| <<plugins-{type}s-{plugin}-threshold>> |Integer|No
+| <<plugins-{type}s-{plugin}-file_field>> |String|No
+| <<plugins-{type}s-{plugin}-weight>> |Float|No
+| <<plugins-{type}s-{plugin}-target>> |String|No
+| <<plugins-{type}s-{plugin}-score_name>> |String|No
+| <<plugins-{type}s-{plugin}-latency_name>> |String|No
+|=======================================================================
+
+[id="plugins-{type}s-{plugin}-ssdeep_bin"]
+===== `ssdeep_bin`
+
+* Value type is `String`.
+* Default value is `"/usr/bin/ssdeep"`
+
+Path where Ssdeep binary is located.
+
+[id="plugins-{type}s-{plugin}-fuzzy_db"]
+===== `fuzzy_db`
+
+* Value type is `String`.
+* Default value is `"/usr/share/logstash/fuzzy.db"`
+
+Path where fuzzy database located.
+
+[id="plugins-{type}s-{plugin}-threshold"]
+===== `threshold`
+
+* Value type is `Integer`.
+* Default value is `95`
+
+Threshold to only taking into account matches above it.
+
+[id="plugins-{type}s-{plugin}-file_field"]
+===== `file_field`
+
+* Value type is `String`.
+* Default value is `"[path]"`
+
+Logstash event field (key) where the file to be analyzed is located.
+
+[id="plugins-{type}s-{plugin}-weight"]
+===== `weight`
+
+* Value type is `Float`.
+* Default value is `1.0`
+
+Malware score is the highest percentage of how similarity is the given
+file and all the entries in the database. If not, score is 0.
+
+[id="plugins-{type}s-{plugin}-target"]
+===== `target`
+
+* Value type is `String`.
+* Default value is `"ssdeep"`
+
+Logstash event field (key) where the JSON is going to be located.
+
+[id="plugins-{type}s-{plugin}-score_name"]
+===== `score_name`
+
+* Value type is `String`.
+* Default value is `"sb_ssdeep"`
+
+Logstash event field (key) where the score is going to be located.
+
+[id="plugins-{type}s-{plugin}-latency_name"]
+===== `latency_name`
+
+* Value type is `String`.
+* Default value is `"ssdeep_latency"`
+
+Logstash event field (key) where the latency is going to be located.
+
+[id="plugins-{type}s-{plugin}-common-options"]
