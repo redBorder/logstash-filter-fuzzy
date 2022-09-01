@@ -1,8 +1,8 @@
 Gem::Specification.new do |s|
-  s.name = 'logstash-filter-ssdeep'
+  s.name = 'logstash-filter-fuzzy'
   s.version = '0.0.1'
   s.licenses = ['Apache-2.0']
-  s.summary = "plugin to get malicious ssdeep score from files pipeline"
+  s.summary = "plugin to get malicious fuzzy score from files pipeline"
   s.description = "This gem is a Logstash plugin required to be installed on top of the Logstash core pipeline using $LS_HOME/bin/logstash-plugin install gemname. This gem is not a stand-alone program"
   s.authors = ["redBorder"]
   s.email = 'systems@redborder.com'

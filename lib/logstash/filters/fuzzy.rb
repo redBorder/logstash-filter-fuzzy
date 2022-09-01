@@ -8,14 +8,18 @@ require 'text'
 
 require_relative "util/aerospike_config"
 
-class LogStash::Filters::Ssdeep < LogStash::Filters::Base
+class LogStash::Filters::Fuzzy < LogStash::Filters::Base
 
   include Aerospike
 
-  config_name "ssdeep"
+  config_name "fuzzy"
 
-  # Ssdeep binary path
-  config :hasher_py,                       :validate => :string,           :default => "TODOOOOOOOOOOOOOOOOOOOO"
+  # Python path
+  config :python,                          :validate => :string,           :default => "/usr/bin/python2.6"
+  # Hasher python script path
+  config :hasher_py,                       :validate => :string,           :default => "/opt/rb/var/rb-sequence-oozie/workflow/lib/scripts/hasher.py"
+  # sdhash binary path
+  config :sdhash_bin,                      :validate => :string,           :default => "/opt/rb/bin/sdhash"
   # Similarity threshold
   config :threshold,                        :validate => :number,           :default => 95
   # File that is going to be analyzed
@@ -57,15 +61,16 @@ class LogStash::Filters::Ssdeep < LogStash::Filters::Base
   end # def register
 
   private
-  def get_fuzzy_hashes_from_file #TODO
-    python = "/usr/bin/python2.6"
-    script = "/tmp/ssdeep/files/hasher.py"
+  def get_fuzzy_hashes_from_file
+
     hashes = {"pe_hash" => '', "ssdeep" => '', "sdhash" => ''}
+
     begin
-      hashes = JSON.parse(`#{python} #{script} #{@file_path}`)
+      hashes = JSON.parse(`#{@python} #{@hasher_py} #{@file_path}`)
     rescue JSON::ParserError
       @logger.error("Cannot get hashes from #{@file_path}")
     end
+
     [hashes["pe_hash"], hashes["ssdeep"], hashes["sdhash"].gsub(@file_path,@hash)]
   end
 
@@ -106,7 +111,7 @@ class LogStash::Filters::Ssdeep < LogStash::Filters::Base
     end
     score *= @weight
     [pehash_info, score, matches]
-  end #TODO
+  end
 
   def get_sdhash_info
     sdhash_info = {"Matches" => []}
@@ -132,21 +137,26 @@ class LogStash::Filters::Ssdeep < LogStash::Filters::Base
     end
     unless sdhashes.empty?
       #Let's create databases
-      open('/tmp/sdhash-file.sdbf', 'a') do |f|
+      dir = "/tmp/fuzzy/"
+      Dir.mkdir dir unless Dir.exist? dir
+
+      database1 = dir + "sdhash-file.sdbf"
+      database2 = dir + "sdhash-file2.sdbf"
+
+      open(database1, 'a') do |f|
         f << @sdhash + "\n"
       end
 
-      open('/tmp/sdhash-file2.sdbf', 'a') do |f|
+      open(database2, 'a') do |f|
         sdhashes.each do |hash|
           f << hash + "\n"
         end
       end
 
-      sdhash_bin = "/opt/rb/bin/sdhash"
-      coincidences = `#{sdhash_bin} -c sdhash-file.sdbf sdhash-file2.sdbf`.split("\n")
+      coincidences = `#{@sdhash_bin} -c #{database1} #{database2} -t #{@threshold}`.split("\n")
 
-      File.delete("/tmp/sdhash-file.sdbf")
-      File.delete("/tmp/sdhash-file2.sdbf")
+      File.delete(database1)
+      File.delete(database2)
 
       coincidences.each do |result|
         _,hash,similarity = result.split("|")
@@ -290,7 +300,7 @@ class LogStash::Filters::Ssdeep < LogStash::Filters::Base
 
     matches = pehash_matches.append(ssdeep_matches).append(sdhash_matches).flatten.uniq
 
-    update_aerospike(matches,nil) #global_score
+    update_aerospike(matches,nil) #TODO
 
     score = [pehash_score,ssdeep_score,sdhash_score].max
 
@@ -304,4 +314,4 @@ class LogStash::Filters::Ssdeep < LogStash::Filters::Base
     filter_matched(event)
 
   end  # def filter(event)
-end # class LogStash::Filters::Ssdeep
+end # class LogStash::Filters::Fuzzy
