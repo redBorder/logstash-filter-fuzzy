@@ -7,6 +7,7 @@ require 'aerospike'
 require 'text'
 
 require_relative "util/aerospike_config"
+require_relative "util/aerospike_methods"
 
 class LogStash::Filters::Fuzzy < LogStash::Filters::Base
 
@@ -24,8 +25,6 @@ class LogStash::Filters::Fuzzy < LogStash::Filters::Base
   config :threshold,                        :validate => :number,           :default => 95
   # File that is going to be analyzed
   config :file_field,                       :validate => :string,           :default => "[path]"
-  # Loader weight
-  config :weight,                                                           :default => 1.0
   # Where you want the data to be placed
   config :target,                           :validate => :string,           :default => "fuzzy"
   # Where you want the score to be placed
@@ -65,6 +64,16 @@ class LogStash::Filters::Fuzzy < LogStash::Filters::Base
 
     hashes = {"pe_hash" => '', "ssdeep" => '', "sdhash" => ''}
 
+    unless File.exist?(@python)
+      @logger.error("Python is not in #{@python}.")
+      return [hashes["pe_hash"], hashes["ssdeep"], hashes["sdhash"]]
+    end
+
+    unless File.exist?(@hasher_py)
+      @logger.error("Python hasher script is not in #{@hasher_py}.")
+      return [hashes["pe_hash"], hashes["ssdeep"], hashes["sdhash"]]
+    end
+
     begin
       hashes = JSON.parse(`#{@python} #{@hasher_py} #{@file_path}`)
     rescue JSON::ParserError
@@ -75,14 +84,7 @@ class LogStash::Filters::Fuzzy < LogStash::Filters::Base
   end
 
   def get_fuzzy_records
-    records = []
-    begin
-      stmt = Statement.new(@aerospike_namespace, @aerospike_set_fuzzy_hash)
-      records = @aerospike.query(stmt)
-    rescue Aerospike::Exceptions::Aerospike => ex
-      @logger.error(ex.message)
-    end
-    records
+    AerospikeMethods::get_records(@aerospike,@aerospike_namespace,@aerospike_set_fuzzy_hash)
   end
 
   def get_pehash_info
@@ -109,7 +111,6 @@ class LogStash::Filters::Fuzzy < LogStash::Filters::Base
         end
       end
     end
-    score *= @weight
     [pehash_info, score, matches]
   end
 
@@ -117,6 +118,11 @@ class LogStash::Filters::Fuzzy < LogStash::Filters::Base
     sdhash_info = {"Matches" => []}
     score = -1
     matches = []
+
+    unless File.exist?(@sdhash_bin)
+      @logger.error("Sdhash binary is not in #{@sdhash_bin}.")
+      [sdhash_info, score, matches]
+    end
 
     if @sdhash == ''
       return [sdhash_info, score, matches]
@@ -164,7 +170,7 @@ class LogStash::Filters::Fuzzy < LogStash::Filters::Base
         sdhash_info["Matches"].push({"hash" => hash, "similarity" => similarity})
         score = similarity if similarity > score
       end
-      score *= @weight
+      score
     end
     [sdhash_info, score, matches]
   end
@@ -196,7 +202,7 @@ class LogStash::Filters::Fuzzy < LogStash::Filters::Base
         end
       end
     end
-    score *= @weight
+    score
     [ssdeep_info, score, matches]
   end
 
@@ -249,34 +255,17 @@ class LogStash::Filters::Fuzzy < LogStash::Filters::Base
 
     begin
       #if !matches.empty? || @file_score > 0 || score > 0   #TODO Check score to know if we should add the fuzzy hash to aerospike
-      key = Key.new(@aerospike_namespace,@aerospike_set_fuzzy_hash,@hash)
-
       bins = []
 
       bins.push(Bin.new("pehash", @pehash))
       bins.push(Bin.new("ssdeep", @ssdeep))
       bins.push(Bin.new("sdhash", @sdhash))
 
-      policy = WritePolicy.new
-      policy.expiration = @ttl_fuzzy
-
-      @aerospike.put(key,bins,policy)
+      AerospikeMethods::set_record(@aerospike, bins, @aerospike_namespace, @aerospike_set_fuzzy_hash, @hash, @ttl_fuzzy)
       #end
     rescue Aerospike::Exceptions::Aerospike => ex
       @logger.error(ex.message)
     end
-  end
-
-  def get_aerospike_value(key,field)
-    value = nil
-    record = @aerospike.get(key,[],Policy.new)
-    record.bins.each do |k,v|
-      if k == field
-        value = v
-        break
-      end
-    end
-    value
   end
 
   public
@@ -310,6 +299,9 @@ class LogStash::Filters::Fuzzy < LogStash::Filters::Base
     event.set(@latency_name, elapsed_time)
     event.set(@target, fuzzy_info)
     event.set(@score_name, score)
+
+    AerospikeMethods::update_malware_hash_score(@aerospike, @aerospike_namespace, @aerospike_set_scores, @hash, @score_name, score, "sb")
+
     # filter_matched should go in the last line of our successful code
     filter_matched(event)
 
