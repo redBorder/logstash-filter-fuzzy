@@ -100,6 +100,20 @@ module AerospikeMethods
     return nil
   end
 
+  def self.get_value(aerospike, namespace, set, hash, field)
+    begin
+      record = get_record(aerospike, namespace, set, hash)
+      unless record.nil?
+        record.bins.each do |entry_key, entry_value|
+          return entry_value if entry_key == field
+        end
+      end
+    rescue Aerospike::Exceptions::Aerospike => ex
+      @logger.error(ex.message)
+    end
+    return nil
+  end
+
   def self.set_record(aerospike, bins, namespace, set, hash, ttl = 0)
     begin
       key = Key.new(namespace,set,hash)

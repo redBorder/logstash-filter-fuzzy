@@ -16,11 +16,11 @@ class LogStash::Filters::Fuzzy < LogStash::Filters::Base
   config_name "fuzzy"
 
   # Python path
-  config :python,                          :validate => :string,           :default => "/usr/bin/python2.6"
+  config :python,                           :validate => :string,           :default => "/usr/bin/python2.6"
   # Hasher python script path
-  config :hasher_py,                       :validate => :string,           :default => "/opt/rb/var/rb-sequence-oozie/workflow/lib/scripts/hasher.py"
+  config :hasher_py,                        :validate => :string,           :default => "/opt/rb/var/rb-sequence-oozie/workflow/lib/scripts/hasher.py"
   # sdhash binary path
-  config :sdhash_bin,                      :validate => :string,           :default => "/opt/rb/bin/sdhash"
+  config :sdhash_bin,                       :validate => :string,           :default => "/opt/rb/bin/sdhash"
   # Similarity threshold
   config :threshold,                        :validate => :number,           :default => 95
   # File that is going to be analyzed
@@ -89,11 +89,9 @@ class LogStash::Filters::Fuzzy < LogStash::Filters::Base
 
   def get_pehash_info
     pehash_info = {"Matches" => []}
-    score = 0
-    matches = []
 
     if @pehash == ''
-      return [pehash_info, score, matches]
+      return pehash_info
     end
 
     get_fuzzy_records.each do |record|
@@ -103,32 +101,26 @@ class LogStash::Filters::Fuzzy < LogStash::Filters::Base
           if column == "pehash"
             pe_hash = value
             if pe_hash == @pehash
-              matches.push(pe_hash)
-              pehash_info["Matches"].push({"hash" => key, "pehash" => pe_hash})
-              score = 100
+              pehash_info["Matches"].push({"hash" => key, "pehash" => pe_hash, "similarity" => 100})
             end
           end
         end
       end
     end
-    [pehash_info, score, matches]
+    pehash_info
   end
 
   def get_sdhash_info
     sdhash_info = {"Matches" => []}
-    score = -1
-    matches = []
 
     unless File.exist?(@sdhash_bin)
       @logger.error("Sdhash binary is not in #{@sdhash_bin}.")
-      [sdhash_info, score, matches]
+      sdhash_info
     end
 
     if @sdhash == ''
-      return [sdhash_info, score, matches]
+      return sdhash_info
     end
-
-    score = 0
 
     sdhashes = []
     get_fuzzy_records.each do |record|
@@ -166,25 +158,19 @@ class LogStash::Filters::Fuzzy < LogStash::Filters::Base
 
       coincidences.each do |result|
         _,hash,similarity = result.split("|")
-        matches.push(hash)
         sdhash_info["Matches"].push({"hash" => hash, "similarity" => similarity})
-        score = similarity if similarity > score
       end
-      score
     end
-    [sdhash_info, score, matches]
+    sdhash_info
   end
 
   def get_ssdeep_info
     ssdeep_info = {"Matches" => []}
-    score = -1
-    matches = []
+
 
     if @ssdeep == ''
-      return [ssdeep_info, score, matches]
+      return ssdeep_info
     end
-
-    score = 0
 
     get_fuzzy_records.each do |record|
       key = record.key.user_key
@@ -194,16 +180,14 @@ class LogStash::Filters::Fuzzy < LogStash::Filters::Base
             ssdeep_hash = value
             similarity = compare_ssdeep(@ssdeep,ssdeep_hash)
             if similarity > @threshold
-              matches.push(ssdeep_hash)
               ssdeep_info["Matches"].push({"hash" => key, "ssdeep" => ssdeep_hash ,"similarity" => similarity})
-              score = similarity if similarity > score
             end
           end
         end
       end
     end
-    score
-    [ssdeep_info, score, matches]
+
+    ssdeep_info
   end
 
   def compare_ssdeep(fh1,fh2)
@@ -220,15 +204,15 @@ class LogStash::Filters::Fuzzy < LogStash::Filters::Base
         score = [score1, score2].min
 
       when block_size2 * 2
-        score = string_score(str11, str22, block_size1)
+        score = string_score(str11, str22, block_size1).to_i.truncate
 
       when block_size2 / 2
-        score = string_score(str12, str21, block_size2)
+        score = string_score(str12, str21, block_size2).to_i.truncate
       else
         score = 0
     end
 
-    score.truncate
+    score
   end
 
   def string_score(str1,str2,block_size)
@@ -251,10 +235,9 @@ class LogStash::Filters::Fuzzy < LogStash::Filters::Base
     [score, score_aux].min
   end
 
-  def update_aerospike(matches,score) #TODO
+  def add_hashes_to_aerospike
 
     begin
-      #if !matches.empty? || @file_score > 0 || score > 0   #TODO Check score to know if we should add the fuzzy hash to aerospike
       bins = []
 
       bins.push(Bin.new("pehash", @pehash))
@@ -266,6 +249,33 @@ class LogStash::Filters::Fuzzy < LogStash::Filters::Base
     rescue Aerospike::Exceptions::Aerospike => ex
       @logger.error(ex.message)
     end
+  end
+
+  def get_fuzzy_score(matches)
+    score = 0
+
+    #First we get a list of hashes with the maximum similarity
+    hashes = []
+    max_similarity = 0
+
+    matches.each do |m|
+      local_similarity = m["similarity"]
+      if local_similarity > max_similarity
+        max_similarity = m["similarity"]
+        hashes = [m["hash"]]
+      elsif local_similarity == max_similarity
+        hashes.push(m["hash"])
+      end
+    end
+
+    # Then we get the maximum score among the hashes
+    hashes.each do |h|
+      local_score = AerospikeMethods::get_value(@aerospike, @aerospike_namespace, @aerospike_set_scores, h, "score")
+      score = local_score if local_score > score
+      @logger.info(score.to_s)
+    end
+
+    (score * max_similarity).round
   end
 
   public
@@ -283,15 +293,17 @@ class LogStash::Filters::Fuzzy < LogStash::Filters::Base
     starting_time = Process.clock_gettime(Process::CLOCK_MONOTONIC)
     @pehash, @ssdeep, @sdhash = get_fuzzy_hashes_from_file
 
-    fuzzy_info["pehash"], pehash_score, pehash_matches = get_pehash_info
-    fuzzy_info["ssdeep"], ssdeep_score, ssdeep_matches = get_ssdeep_info
-    fuzzy_info["sdhash"], sdhash_score, sdhash_matches = get_sdhash_info
+    fuzzy_info["pehash"] = get_pehash_info
+    fuzzy_info["ssdeep"] = get_ssdeep_info
+    fuzzy_info["sdhash"] = get_sdhash_info
 
-    matches = pehash_matches.append(ssdeep_matches).append(sdhash_matches).flatten.uniq
+    matches = fuzzy_info["pehash"]["Matches"].push(fuzzy_info["ssdeep"]["Matches"]).push(fuzzy_info["sdhash"]["Matches"]).flatten
 
-    update_aerospike(matches,nil) #TODO
+    score = get_fuzzy_score(matches)
 
-    score = [pehash_score,ssdeep_score,sdhash_score].max
+    global_score = AerospikeMethods::get_value(@aerospike, @aerospike_namespace, @aerospike_set_scores, @hash, "score")
+
+    add_hashes_to_aerospike if score > 0 or (!global_score.nil? and global_score > 0)
 
     ending_time  = Process.clock_gettime(Process::CLOCK_MONOTONIC)
     elapsed_time = (ending_time - starting_time).round(1)
