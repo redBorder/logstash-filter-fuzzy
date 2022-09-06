@@ -1,7 +1,7 @@
 require "yaml"
 require 'aerospike'
 
-module AerospikeMethods
+module AerospikeManager
 
   WEIGHTS_CONFIG_FILE = "/opt/rb/var/rb-sequence-oozie/conf/weights.yml" unless defined? WEIGHTS_CONFIG_FILE
 

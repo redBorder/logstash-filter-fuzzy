@@ -7,7 +7,7 @@ require 'aerospike'
 require 'text'
 
 require_relative "util/aerospike_config"
-require_relative "util/aerospike_methods"
+require_relative "util/aerospike_manager"
 
 class LogStash::Filters::Fuzzy < LogStash::Filters::Base
 
