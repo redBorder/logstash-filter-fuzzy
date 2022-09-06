@@ -27,7 +27,6 @@ filter{
     sdhash_bin => '/opt/rb/bin/sdhash'
     threshold => 95
     file_field => '[path]'
-    weight => 1.0
     target => 'fuzzy'
     score_name => 'sb_fuzzy'
     latency_name => 'fuzzy_latency'
@@ -59,7 +58,6 @@ https://ssdeep-project.github.io/ssdeep/index.html
 | <<plugins-{type}s-{plugin}-sdhash_bin>>                   |String         |No
 | <<plugins-{type}s-{plugin}-threshold>>                    |Integer        |No
 | <<plugins-{type}s-{plugin}-file_field>>                   |String         |No
-| <<plugins-{type}s-{plugin}-weight>>                       |Float          |No
 | <<plugins-{type}s-{plugin}-target>>                       |String         |No
 | <<plugins-{type}s-{plugin}-score_name>>                   |String         |No
 | <<plugins-{type}s-{plugin}-latency_name>>                 |String         |No
@@ -109,15 +107,6 @@ Threshold to only taking into account matches above it.
 * Default value is `"[path]"`
 
 Logstash event field (key) where the file to be analyzed is located.
-
-[id="plugins-{type}s-{plugin}-weight"]
-===== `weight`
-
-* Value type is `Float`.
-* Default value is `1.0`
-
-Malware score is the highest percentage of how similarity is the given
-file using the algorithms and the entries in the fuzzy database.
 
 [id="plugins-{type}s-{plugin}-target"]
 ===== `target`
