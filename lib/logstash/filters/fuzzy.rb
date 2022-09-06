@@ -84,7 +84,7 @@ class LogStash::Filters::Fuzzy < LogStash::Filters::Base
   end
 
   def get_fuzzy_records
-    AerospikeMethods::get_records(@aerospike,@aerospike_namespace,@aerospike_set_fuzzy_hash)
+    AerospikeManager::get_records(@aerospike,@aerospike_namespace,@aerospike_set_fuzzy_hash)
   end
 
   def get_pehash_info
@@ -244,7 +244,7 @@ class LogStash::Filters::Fuzzy < LogStash::Filters::Base
       bins.push(Bin.new("ssdeep", @ssdeep))
       bins.push(Bin.new("sdhash", @sdhash))
 
-      AerospikeMethods::set_record(@aerospike, bins, @aerospike_namespace, @aerospike_set_fuzzy_hash, @hash, @ttl_fuzzy)
+      AerospikeManager::set_record(@aerospike, bins, @aerospike_namespace, @aerospike_set_fuzzy_hash, @hash, @ttl_fuzzy)
       #end
     rescue Aerospike::Exceptions::Aerospike => ex
       @logger.error(ex.message)
@@ -270,7 +270,7 @@ class LogStash::Filters::Fuzzy < LogStash::Filters::Base
 
     # Then we get the maximum score among the hashes
     hashes.each do |h|
-      local_score = AerospikeMethods::get_value(@aerospike, @aerospike_namespace, @aerospike_set_scores, h, "score")
+      local_score = AerospikeManager::get_value(@aerospike, @aerospike_namespace, @aerospike_set_scores, h, "score")
       score = local_score if local_score > score
       @logger.info(score.to_s)
     end
@@ -301,7 +301,7 @@ class LogStash::Filters::Fuzzy < LogStash::Filters::Base
 
     score = get_fuzzy_score(matches)
 
-    global_score = AerospikeMethods::get_value(@aerospike, @aerospike_namespace, @aerospike_set_scores, @hash, "score")
+    global_score = AerospikeManager::get_value(@aerospike, @aerospike_namespace, @aerospike_set_scores, @hash, "score")
 
     add_hashes_to_aerospike if score > 0 or (!global_score.nil? and global_score > 0)
 
@@ -312,7 +312,7 @@ class LogStash::Filters::Fuzzy < LogStash::Filters::Base
     event.set(@target, fuzzy_info)
     event.set(@score_name, score)
 
-    AerospikeMethods::update_malware_hash_score(@aerospike, @aerospike_namespace, @aerospike_set_scores, @hash, @score_name, score, "sb")
+    AerospikeManager::update_malware_hash_score(@aerospike, @aerospike_namespace, @aerospike_set_scores, @hash, @score_name, score, "sb")
 
     # filter_matched should go in the last line of our successful code
     filter_matched(event)
