@@ -14,7 +14,7 @@ END - GENERATED VARIABLES, DO NOT EDIT!
 
 [id="plugins-{type}s-{plugin}"]
 
-== logstash-filter-ssdeep
+== logstash-filter-fuzzy
 
 === Example filter plugin
 
