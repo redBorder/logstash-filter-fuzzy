@@ -14,66 +14,83 @@ END - GENERATED VARIABLES, DO NOT EDIT!
 
 [id="plugins-{type}s-{plugin}"]
 
-== logstash-filter-ssdeep
+== logstash-filter-fuzzy
 
 === Example filter plugin
 
 [,logstash]
 ----
 filter{
-  ssdeep {
-    ssdeep_bin => '/usr/bin/ssdeep'
-    fuzzy_db => '/usr/share/logstash/fuzzy.db'
+  fuzzy {
+    python => '/usr/bin/python2.6'
+    hasher_py => '/opt/rb/var/rb-sequence-oozie/workflow/lib/scripts/hasher.py'
+    sdhash_bin => '/opt/rb/bin/sdhash'
     threshold => 95
     file_field => '[path]'
-    weight => 1.0
-    target => 'ssdeep'
-    score_name => 'sb_ssdeep'
-    latency_name => 'ssdeep_latency'
+    target => 'fuzzy'
+    score_name => 'sb_fuzzy'
+    latency_name => 'fuzzy_latency'
+    aerospike_server => ""
+    aerospike_namespace => "malware"
+    aerospike_set_fuzzy_hash => "fuzzy"
+    aerospike_set_scores => "hashScores"
+    ttl_fuzzy => 0
   }
 }
 ----
 
 === Description
 
-This is an example of Logstash filter plugin for ssdeep analysis. This filter returns a
-JSON with the result provided by ssdeep and a score about how similarly is the given file
-to fuzzy database entries.
-dangerous is the file.
+This is an example of Logstash filter plugin for Fuzzy Hashing Algorithms analysis. This filter returns a
+JSON with the result of identifying similarities using import hashing, ssdeep and sdhash.
 
+http://roussev.net/sdhash/sdhash.html
 https://ssdeep-project.github.io/ssdeep/index.html
 
 [id="plugins-{type}s-{plugin}-options"]
 ==== Filter Configuration Options
 
 [cols="<,<,<",options="header",]
-|=======================================================================
-|Setting |Input type|Required
-| <<plugins-{type}s-{plugin}-ssdeep_bin>> |String|No
-| <<plugins-{type}s-{plugin}-fuzzy_db>> |String|No
-| <<plugins-{type}s-{plugin}-threshold>> |Integer|No
-| <<plugins-{type}s-{plugin}-file_field>> |String|No
-| <<plugins-{type}s-{plugin}-weight>> |Float|No
-| <<plugins-{type}s-{plugin}-target>> |String|No
-| <<plugins-{type}s-{plugin}-score_name>> |String|No
-| <<plugins-{type}s-{plugin}-latency_name>> |String|No
-|=======================================================================
+|====================================================================================
+|               Setting                                     |   Input type  |Required
+| <<plugins-{type}s-{plugin}-python>>                       |String         |No
+| <<plugins-{type}s-{plugin}-hasher_py>>                    |String         |No
+| <<plugins-{type}s-{plugin}-sdhash_bin>>                   |String         |No
+| <<plugins-{type}s-{plugin}-threshold>>                    |Integer        |No
+| <<plugins-{type}s-{plugin}-file_field>>                   |String         |No
+| <<plugins-{type}s-{plugin}-target>>                       |String         |No
+| <<plugins-{type}s-{plugin}-score_name>>                   |String         |No
+| <<plugins-{type}s-{plugin}-latency_name>>                 |String         |No
+| <<plugins-{type}s-{plugin}-aerospike_server>>             |String         |No
+| <<plugins-{type}s-{plugin}-aerospike_namespace>>          |String         |No
+| <<plugins-{type}s-{plugin}-aerospike_set_fuzzy_hash>>     |String         |No
+| <<plugins-{type}s-{plugin}-aerospike_set_scores>>         |String         |No
+| <<plugins-{type}s-{plugin}-ttl_fuzzy>>                    |Number         |No
+|====================================================================================
 
-[id="plugins-{type}s-{plugin}-ssdeep_bin"]
-===== `ssdeep_bin`
-
-* Value type is `String`.
-* Default value is `"/usr/bin/ssdeep"`
-
-Path where Ssdeep binary is located.
-
-[id="plugins-{type}s-{plugin}-fuzzy_db"]
-===== `fuzzy_db`
+[id="plugins-{type}s-{plugin}-python"]
+===== `python`
 
 * Value type is `String`.
-* Default value is `"/usr/share/logstash/fuzzy.db"`
+* Default value is `"/usr/bin/python2.6"`
 
-Path where fuzzy database located.
+Path where Python is located.
+
+[id="plugins-{type}s-{plugin}-hasher_py"]
+===== `hasher_py`
+
+* Value type is `String`.
+* Default value is `"/opt/rb/var/rb-sequence-oozie/workflow/lib/scripts/hasher.py"`
+
+Path where Python script hasher.py is located.
+
+[id="plugins-{type}s-{plugin}-sdhash_bin"]
+===== `sdhash_bin`
+
+* Value type is `String`.
+* Default value is `"/opt/rb/bin/sdhash"`
+
+Path where sdhash is located.
 
 [id="plugins-{type}s-{plugin}-threshold"]
 ===== `threshold`
@@ -91,20 +108,11 @@ Threshold to only taking into account matches above it.
 
 Logstash event field (key) where the file to be analyzed is located.
 
-[id="plugins-{type}s-{plugin}-weight"]
-===== `weight`
-
-* Value type is `Float`.
-* Default value is `1.0`
-
-Malware score is the highest percentage of how similarity is the given
-file and all the entries in the database. If not, score is 0.
-
 [id="plugins-{type}s-{plugin}-target"]
 ===== `target`
 
 * Value type is `String`.
-* Default value is `"ssdeep"`
+* Default value is `"fuzzy"`
 
 Logstash event field (key) where the JSON is going to be located.
 
@@ -112,7 +120,7 @@ Logstash event field (key) where the JSON is going to be located.
 ===== `score_name`
 
 * Value type is `String`.
-* Default value is `"sb_ssdeep"`
+* Default value is `"sb_fuzzy"`
 
 Logstash event field (key) where the score is going to be located.
 
@@ -120,8 +128,65 @@ Logstash event field (key) where the score is going to be located.
 ===== `latency_name`
 
 * Value type is `String`.
-* Default value is `"ssdeep_latency"`
+* Default value is `"fuzzy_latency"`
 
 Logstash event field (key) where the latency is going to be located.
+
+[id="plugins-{type}s-{plugin}-aerospike_server"]
+===== `aerospike_server`
+
+* Value type is `String`.
+* Default value is `""`
+
+Aerospike server in the form "host:port".
+
+[id="plugins-{type}s-{plugin}-aerospike_namespace"]
+===== `aerospike_namespace`
+
+* Value type is `String`.
+* Default value is `"malware"`
+
+Namespace is a Database name in Aerospike.
+
+[id="plugins-{type}s-{plugin}-aerospike_set_fuzzy_hash"]
+===== `aerospike_set_fuzzy_hash`
+
+* Value type is `String`.
+* Default value is `"fuzzy"`
+
+Set in Aerospike is similar to table in a relational database.
+It is the set where fuzzy hashes are going to be stored.
+
+[id="plugins-{type}s-{plugin}-aerospike_set_scores"]
+===== `aerospike_set_scores`
+
+* Value type is `String`.
+* Default value is `"hashScores"`
+
+Set in Aerospike is similar to table in a relational database.
+It is the set where files' scores are stored.
+
+[id="plugins-{type}s-{plugin}-ttl_fuzzy"]
+===== `ttl_fuzzy`
+
+* Value type is `Number`.
+* Default value is `0`
+
+Aerospike provides the ability to expire a record by setting its TTL
+(Time To Live) from a client. The TTL value is the number of seconds
+that a record will live (from the current time) before being removed
+by the server.
+
+*Record Expiration values (TTL)*
+
+[cols="^.^,<",options="header",]
+|===================================================================
+|  TTL | Description
+|  -2  | Do not change ttl when record is updated.
+         Supported by Aerospike server versions >= 3.10.1.
+|  -1  | Never expire. Supported by Aerospike server versions >= 3.1.4.
+|   0  | Default to namespace configuration variable “default-ttl” on the server.
+|  >0  | Actual ttl in seconds (some client support the following time units S, M, H, D)
+|===================================================================
 
 [id="plugins-{type}s-{plugin}-common-options"]

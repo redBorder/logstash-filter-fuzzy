@@ -6,7 +6,7 @@ This filter is use as part of an internal event process for redBorder platform.
 
 ## Documentation
 
-Add the ssdeep score in your Logstash pipeline.
+Add the fuzzy score in your Logstash pipeline.
 
 [Take a look at the documentation.](docs/index.asciidoc)
 
@@ -24,7 +24,7 @@ Need help? Try sending us an email to support@redborder.com
 rvm install jruby-9.2.6.0
 ```
 
-- Clone from the GitHub [logstash-filter-ssdeep](https://github.com/redBorder/logstash-filter-ssdeep)
+- Clone from the GitHub [logstash-filter-fuzzy](https://github.com/redBorder/logstash-filter-fuzzy)
 
 - Install dependencies
 ```sh
@@ -51,7 +51,7 @@ bundle exec rspec
 
 - Build your plugin gem
 ```sh
-gem build logstash-filter-ssdeep.gemspec
+gem build logstash-filter-fuzzy.gemspec
 ```
 - Install the plugin from the Logstash home
 ```sh
