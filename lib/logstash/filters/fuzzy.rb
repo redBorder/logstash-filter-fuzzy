@@ -7,7 +7,6 @@ require 'aerospike'
 require 'text'
 
 require_relative "util/aerospike_config"
-require_relative "util/aerospike_manager"
 
 class LogStash::Filters::Fuzzy < LogStash::Filters::Base
 
@@ -60,7 +59,25 @@ class LogStash::Filters::Fuzzy < LogStash::Filters::Base
   end # def register
 
   private
+
+  # Get fuzzy hashes from files.
+  #
+  # This method needs a python script (hasher.py) to get the aforementioned hashes.
+  #
+  # There are three kinds of hashes that can be returned from hasher.py:
+  #
+  # 1. peHash: Hash from PE files.
+  # PE format is a file format for executables, object code, DLLs and
+  # others used in 32-bit and 64-bit versions of Windows operating systems.
+  #
+  # 2. ssdeep.
+  #
+  # 3. sdHash.
+  #
+  #@return Array with hashes [pe_hash, ssdeep, sdhash].
   def get_fuzzy_hashes_from_file
+
+    @logger.info("Calculating fuzzy hashes from #{File.basename(@file_path)}.")
 
     hashes = {"pe_hash" => '', "ssdeep" => '', "sdhash" => ''}
 
@@ -83,35 +100,72 @@ class LogStash::Filters::Fuzzy < LogStash::Filters::Base
     [hashes["pe_hash"], hashes["ssdeep"], hashes["sdhash"].gsub(@file_path,@hash)]
   end
 
+  # Get fuzzy records from Aerospike
+  #
+  # @return [Aerospike::Recordset, nil] Aerospike::Recordset or nil if there is no records in Aerospike.
   def get_fuzzy_records
-    AerospikeManager::get_records(@aerospike,@aerospike_namespace,@aerospike_set_fuzzy_hash)
+    @logger.info("Getting fuzzy records from Aerospike.")
+    records = nil
+    begin
+      stmt = Statement.new(@aerospike_namespace, @aerospike_set_fuzzy_hash)
+      records = @aerospike.query(stmt).records
+      records = Array.new(records.size) { records.pop }
+    rescue Aerospike::Exceptions::Aerospike => ex
+      @logger.error("Failed when trying to get records.")
+      @logger.error(ex.message)
+    end
+    records
   end
 
-  def get_pehash_info
-    pehash_info = {"Matches" => []}
+  # Get file score from Aerospike
+  #
+  # @param hash - Key to search for the score in Aerospike
+  # @return [Integer,nil] Score or nil if there is no score in Aerospike
+  def get_hash_score(hash)
+    @logger.info("Getting hash score from hash #{hash}.")
+    begin
+      key = Key.new(@aerospike_namespace, @aerospike_set_scores, hash)
+      record = @aerospike.get(key,[],Policy.new)
+
+      record.bins["score"] unless record.nil?
+    rescue Aerospike::Exceptions::Aerospike => ex
+      @logger.error(ex.message)
+      nil
+    end
+  end
+
+  # Get matches, if any, from file peHash and peHashes stored in Aerospike
+  #
+  # @return a dictionary (hash) with pehash matches with the form {"hash" => key, "pehash" => pe_hash, "similarity" => 100}
+  #
+  def get_pehash_matches
+    @logger.info("Getting peHash matches.")
+    pehash_info = {"peHash" => @pehash, "Matches" => "none"}
 
     if @pehash == ''
       return pehash_info
     end
 
-    get_fuzzy_records.each do |record|
+    @records.each do |record|
       key = record.key.user_key
       if @hash != key  #Avoid duplicate events
-        record.bins.each do |column, value|
-          if column == "pehash"
-            pe_hash = value
-            if pe_hash == @pehash
-              pehash_info["Matches"].push({"hash" => key, "pehash" => pe_hash, "similarity" => 100})
-            end
-          end
+        local_pe_hash = record.bins["pehash"]
+        if local_pe_hash and local_pe_hash == @pehash
+          pehash_info["Matches"] = [] if pehash_info["Matches"].instance_of? String
+          pehash_info["Matches"].push({"hash" => key, "pehash" => local_pe_hash, "similarity" => 100})
         end
       end
     end
     pehash_info
   end
 
-  def get_sdhash_info
-    sdhash_info = {"Matches" => []}
+  # Get matches, if any, from file sdHash and sdHashes stored in Aerospike
+  #
+  # @return a dictionary (hash) with sdhash matches with the form {"hash" => key, "sdhash" => sd_hash, "similarity" => similarity}
+  #
+  def get_sdhash_matches
+    @logger.info("Getting sdHash matches.")
+    sdhash_info = {"sdHash" => @sdhash, "Matches" => "none"}
 
     unless File.exist?(@sdhash_bin)
       @logger.error("Sdhash binary is not in #{@sdhash_bin}.")
@@ -123,16 +177,14 @@ class LogStash::Filters::Fuzzy < LogStash::Filters::Base
     end
 
     sdhashes = []
-    get_fuzzy_records.each do |record|
+    @records.each do |record|
       key = record.key.user_key
       if @hash != key  #Avoid duplicate events
-        record.bins.each do |column, value|
-          if column == "sdhash"
-            sdhashes.push value
-          end
-        end
+        local_sd_hash = record.bins["sdhash"]
+        sdhashes.push local_sd_hash if local_sd_hash
       end
     end
+
     unless sdhashes.empty?
       #Let's create databases
       dir = "/tmp/fuzzy/"
@@ -158,30 +210,34 @@ class LogStash::Filters::Fuzzy < LogStash::Filters::Base
 
       coincidences.each do |result|
         _,hash,similarity = result.split("|")
+        sdhash_info["Matches"] = [] if sdhash_info["Matches"].instance_of? String
         sdhash_info["Matches"].push({"hash" => hash, "similarity" => similarity})
       end
     end
     sdhash_info
   end
 
-  def get_ssdeep_info
-    ssdeep_info = {"Matches" => []}
-
+  # Get matches, if any, from file ssdeepHash and ssdeepHashes stored in Aerospike
+  #
+  # @return a dictionary (hash) with ssdeep matches with the form {"hash" => key, "ssdeep" => ssdeep_hash, "similarity" => similarity}
+  #
+  def get_ssdeep_matches
+    @logger.info("Getting ssdeep matches.")
+    ssdeep_info = {"ssdeep" => @ssdeep, "Matches" => "none"}
 
     if @ssdeep == ''
       return ssdeep_info
     end
 
-    get_fuzzy_records.each do |record|
+    @records.each do |record|
       key = record.key.user_key
       if @hash != key  #Avoid duplicate events
-        record.bins.each do |column, value|
-          if column == "ssdeep"
-            ssdeep_hash = value
-            similarity = compare_ssdeep(@ssdeep,ssdeep_hash)
-            if similarity > @threshold
-              ssdeep_info["Matches"].push({"hash" => key, "ssdeep" => ssdeep_hash ,"similarity" => similarity})
-            end
+        local_ssdeep = record.bins["ssdeep"]
+        if local_ssdeep
+          similarity = compare_ssdeep(@ssdeep,local_ssdeep)
+          if similarity > @threshold
+            ssdeep_info["Matches"] = [] if ssdeep_info["Matches"].instance_of? String
+            ssdeep_info["Matches"].push({"hash" => key, "ssdeep" => local_ssdeep ,"similarity" => similarity})
           end
         end
       end
@@ -190,6 +246,12 @@ class LogStash::Filters::Fuzzy < LogStash::Filters::Base
     ssdeep_info
   end
 
+  # Get ssdeep similarity between two ssdeep hashes
+  #
+  # @param fh1 - First fuzzy hash
+  # @param fh2 - Second fuzzy hash
+  # @return Integer - ssdeep similarity
+  #
   def compare_ssdeep(fh1,fh2)
     #fh fuzzy hash
     block_size1, str11, str12 = fh1.split(':')
@@ -215,6 +277,8 @@ class LogStash::Filters::Fuzzy < LogStash::Filters::Base
     score
   end
 
+  # Calculate how different are two strings using Levenshtein Distance
+  #
   def string_score(str1,str2,block_size)
     spamsum_length = 64
     min_blocksize = 3
@@ -235,8 +299,11 @@ class LogStash::Filters::Fuzzy < LogStash::Filters::Base
     [score, score_aux].min
   end
 
-  def add_hashes_to_aerospike
+  # Store fuzzy hashes in Aerospike
+  #
+  def add_fuzzy_hashes_to_aerospike
 
+    @logger.info("Storing fuzzy hashes from #{@hash} in Aerospike.")
     begin
       bins = []
 
@@ -244,13 +311,24 @@ class LogStash::Filters::Fuzzy < LogStash::Filters::Base
       bins.push(Bin.new("ssdeep", @ssdeep))
       bins.push(Bin.new("sdhash", @sdhash))
 
-      AerospikeManager::set_record(@aerospike, bins, @aerospike_namespace, @aerospike_set_fuzzy_hash, @hash, @ttl_fuzzy)
-      #end
+      key = Key.new(@aerospike_namespace,@aerospike_set_fuzzy_hash,@hash)
+
+      policy = WritePolicy.new
+      policy.expiration = @ttl_fuzzy
+
+      @aerospike.put(key,bins,policy)
+    rescue Aerospike::Exceptions::Aerospike => ex
+      @logger.error(ex.message)
+
     rescue Aerospike::Exceptions::Aerospike => ex
       @logger.error(ex.message)
     end
   end
 
+  # Get fuzzy score
+  #
+  # @param matches - Array with matches
+  # @return score - Integer with the maximum similarity between the fuzzy algorithms.
   def get_fuzzy_score(matches)
     score = 0
 
@@ -270,7 +348,7 @@ class LogStash::Filters::Fuzzy < LogStash::Filters::Base
 
     # Then we get the maximum score among the hashes
     hashes.each do |h|
-      local_score = AerospikeManager::get_value(@aerospike, @aerospike_namespace, @aerospike_set_scores, h, "score")
+      local_score = get_hash_score(h)
       score = local_score if local_score > score
       @logger.info(score.to_s)
     end
@@ -280,30 +358,42 @@ class LogStash::Filters::Fuzzy < LogStash::Filters::Base
 
   public
   def filter(event)
-
     @file_path = event.get(@file_field)
+    @logger.info("[#{@target}] processing #{@path}")
+
     fuzzy_info = {"pehash" => { }, "ssdeep" => { }, "sdhash" => { }}
 
-    begin
-      @hash = Digest::SHA2.new(256).hexdigest File.read @file_path
-    rescue Errno::ENOENT => ex
-      @logger.error(ex.message)
+    @hash = event.get('sha256')
+
+    if @hash.nil?
+      begin
+        @hash = Digest::SHA2.new(256).hexdigest File.read @file_path
+        event.set('sha256', @hash)
+      rescue Errno::ENOENT => ex
+        @logger.error(ex.message)
+      end
     end
 
     starting_time = Process.clock_gettime(Process::CLOCK_MONOTONIC)
     @pehash, @ssdeep, @sdhash = get_fuzzy_hashes_from_file
 
-    fuzzy_info["pehash"] = get_pehash_info
-    fuzzy_info["ssdeep"] = get_ssdeep_info
-    fuzzy_info["sdhash"] = get_sdhash_info
+    @records = get_fuzzy_records
 
-    matches = fuzzy_info["pehash"]["Matches"].push(fuzzy_info["ssdeep"]["Matches"]).push(fuzzy_info["sdhash"]["Matches"]).flatten
+    fuzzy_info["pehash"] = get_pehash_matches
+    fuzzy_info["ssdeep"] = get_ssdeep_matches
+    fuzzy_info["sdhash"] = get_sdhash_matches
+
+    matches = []
+    matches.push(fuzzy_info["pehash"]["Matches"]) unless fuzzy_info["pehash"]["Matches"].instance_of? String
+    matches.push(fuzzy_info["ssdeep"]["Matches"]) unless fuzzy_info["ssdeep"]["Matches"].instance_of? String
+    matches.push(fuzzy_info["sdhash"]["Matches"]) unless fuzzy_info["sdhash"]["Matches"].instance_of? String
+    matches.flatten unless matches.empty?
 
     score = get_fuzzy_score(matches)
 
-    global_score = AerospikeManager::get_value(@aerospike, @aerospike_namespace, @aerospike_set_scores, @hash, "score")
+    global_score = get_hash_score(@hash)
 
-    add_hashes_to_aerospike if score > 0 or (!global_score.nil? and global_score > 0)
+    add_fuzzy_hashes_to_aerospike if score > 0 or (!global_score.nil? and global_score > 0)
 
     ending_time  = Process.clock_gettime(Process::CLOCK_MONOTONIC)
     elapsed_time = (ending_time - starting_time).round(1)
@@ -312,7 +402,6 @@ class LogStash::Filters::Fuzzy < LogStash::Filters::Base
     event.set(@target, fuzzy_info)
     event.set(@score_name, score)
 
-    AerospikeManager::update_malware_hash_score(@aerospike, @aerospike_namespace, @aerospike_set_scores, @hash, @score_name, score, "sb")
 
     # filter_matched should go in the last line of our successful code
     filter_matched(event)
