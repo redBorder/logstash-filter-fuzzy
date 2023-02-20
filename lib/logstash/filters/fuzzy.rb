@@ -178,6 +178,7 @@ class LogStash::Filters::Fuzzy < LogStash::Filters::Base
 
     sdhashes = []
     @records.each do |record|
+      next unless record.key
       key = record.key.user_key
       if @hash != key  #Avoid duplicate events
         local_sd_hash = record.bins["sdhash"]
