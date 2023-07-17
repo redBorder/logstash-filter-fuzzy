@@ -356,7 +356,7 @@ class LogStash::Filters::Fuzzy < LogStash::Filters::Base
         score = local_score if local_score > score
         @logger.info(score.to_s)
       rescue
-        logger.error("Error while fetching score from Aerospike.")
+        @logger.error("Error while fetching score from Aerospike.")
       end
     end
 
