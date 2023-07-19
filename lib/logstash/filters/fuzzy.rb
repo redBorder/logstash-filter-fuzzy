@@ -231,6 +231,7 @@ class LogStash::Filters::Fuzzy < LogStash::Filters::Base
     end
 
     @records.each do |record|
+      next unless record.key
       key = record.key.user_key
       if @hash != key  #Avoid duplicate events
         local_ssdeep = record.bins["ssdeep"]
