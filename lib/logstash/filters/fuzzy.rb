@@ -338,20 +338,26 @@ class LogStash::Filters::Fuzzy < LogStash::Filters::Base
     max_similarity = 0
 
     matches.each do |m|
-      local_similarity = m["similarity"]
-      if local_similarity > max_similarity
-        max_similarity = m["similarity"]
-        hashes = [m["hash"]]
-      elsif local_similarity == max_similarity
-        hashes.push(m["hash"])
+      if !m["similarity"].nil? && m["similarity"].is_a?(Numeric)
+        local_similarity = m["similarity"]
+        if local_similarity > max_similarity
+          max_similarity = m["similarity"]
+          hashes = [m["hash"]]
+        elsif local_similarity == max_similarity
+          hashes.push(m["hash"])
+        end
       end
     end
 
     # Then we get the maximum score among the hashes
     hashes.each do |h|
-      local_score = get_hash_score(h)
-      score = local_score if local_score > score
-      @logger.info(score.to_s)
+      begin
+        local_score = get_hash_score(h)
+        score = local_score if local_score > score
+        @logger.info(score.to_s)
+      rescue
+        @logger.error("Error while fetching score from Aerospike.")
+      end
     end
 
     (score * max_similarity).round
