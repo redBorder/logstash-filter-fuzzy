@@ -47,18 +47,23 @@ class LogStash::Filters::Fuzzy < LogStash::Filters::Base
   public
   def register
     # Add instance variables
-    begin
-      @aerospike_server = AerospikeConfig::servers if @aerospike_server.empty?
-      @aerospike_server = @aerospike_server[0] if @aerospike_server.class.to_s == "Array"
-      host,port = @aerospike_server.split(":")
-      @aerospike = Client.new(Host.new(host, port))
-
-    rescue Aerospike::Exceptions::Aerospike => ex
-      @logger.error(ex.message)
-    end
+    @aerospike_server = AerospikeConfig::servers if @aerospike_server.empty?
+    @aerospike_server = @aerospike_server.first if @aerospike_server.class.to_s == "Array"  
+    @aerospike = nil
+    register_aerospike
   end # def register
 
   private
+
+  def register_aerospike
+    begin
+      host,port = @aerospike_server.split(":")
+      @aerospike = Client.new(Host.new(host, port))
+    rescue Aerospike::Exceptions::Aerospike => ex
+      @aerospike = nil
+      @logger.error(ex.message)
+    end
+  end
 
   # Get fuzzy hashes from files.
   #
@@ -322,9 +327,6 @@ class LogStash::Filters::Fuzzy < LogStash::Filters::Base
       @aerospike.put(key,bins,policy)
     rescue Aerospike::Exceptions::Aerospike => ex
       @logger.error(ex.message)
-
-    rescue Aerospike::Exceptions::Aerospike => ex
-      @logger.error(ex.message)
     end
   end
 
@@ -367,6 +369,12 @@ class LogStash::Filters::Fuzzy < LogStash::Filters::Base
 
   public
   def filter(event)
+
+    # Solve the problem that happen when:
+    # at time of registering the plugin the
+    # aerospike was not there
+    register_aerospike if @aerospike.nil?
+
     @file_path = event.get(@file_field)
     @logger.info("[#{@target}] processing #{@path}")
 
