@@ -48,7 +48,7 @@ class LogStash::Filters::Fuzzy < LogStash::Filters::Base
   def register
     # Add instance variables
     @aerospike_server = AerospikeConfig::servers if @aerospike_server.empty?
-    @aerospike_server = @aerospike_server.first if @aerospike_server.class.to_s == "Array"  
+    @aerospike_server = @aerospike_server.sample if @aerospike_server.class.to_s == "Array"  
     @aerospike = nil
     register_aerospike
   end # def register
@@ -57,7 +57,7 @@ class LogStash::Filters::Fuzzy < LogStash::Filters::Base
 
   def register_aerospike
     begin
-      host,port = @aerospike_server.first.split(":")
+      host,port = @aerospike_server.split(":")
       @aerospike = Client.new(Host.new(host, port))
     rescue Aerospike::Exceptions::Aerospike => ex
       @aerospike = nil
